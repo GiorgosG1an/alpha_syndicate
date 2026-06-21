@@ -34,7 +34,7 @@ async def run_syndicate(ticker: str, query: str):
     draft = current_state.values.get("draft_memo", "Error: No draft found.")
 
     print("\n" + "="*60)
-    print("📝 DRAFT MEMO READY FOR PORTFOLIO MANAGER REVIEW")
+    print("DRAFT MEMO READY FOR PORTFOLIO MANAGER REVIEW")
     print("="*60)
     print(draft)
     print("="*60 + "\n")
