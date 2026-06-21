@@ -2,13 +2,17 @@ import asyncio
 import uuid
 import argparse
 import sys
+import selectors
 
-from src.agent.graph import master_graph
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+
+from src.agent.graph import build_master_graph
 from src.logger import get_logger
+from src.config import settings
 
 logger = get_logger(__name__)
 
-async def run_syndicate(ticker: str, query: str):
+async def run_syndicate(ticker: str, query: str, master_graph):
     thread_id = str(uuid.uuid4())
     config = {"configurable": {"thread_id": thread_id}}
 
@@ -30,7 +34,7 @@ async def run_syndicate(ticker: str, query: str):
         logger.error(f"Critical error during execution: {e}")
         sys.exit(1)
 
-    current_state = master_graph.get_state(config)
+    current_state = await master_graph.aget_state(config)
     draft = current_state.values.get("draft_memo", "Error: No draft found.")
 
     print("\n" + "="*60)
@@ -74,25 +78,29 @@ async def run_syndicate(ticker: str, query: str):
                 
     print("\n\nMission Accomplished. Syndicate Offline.")
 
-if __name__ == "__main__":
+async def main():
     parser = argparse.ArgumentParser(description="Alpha Syndicate: Hedge Fund AI Agent")
-    parser.add_argument(
-        "--ticker", 
-        type=str, 
-        default="AAPL", 
-        help="The stock ticker to research (e.g., AAPL, NVDA, TSLA)."
-    )
-    parser.add_argument(
-        "--query", 
-        type=str, 
-        default="Analyze Apple (AAPL). Focus specifically on their upcoming AI hardware investments and whether it poses a threat to Nvidia.", 
-        help="The specific strategic query for the AI to focus on."
-    )
+    parser.add_argument("--ticker", type=str, default="AAPL")
+    parser.add_argument("--query", type=str, default="Analyze Apple (AAPL). Focus specifically on their upcoming AI hardware investments.")
     
     args = parser.parse_args()
+
+    logger.info("Connecting to Postgres database...")
     
-    try:
-        asyncio.run(run_syndicate(ticker=args.ticker, query=args.query))
-    except KeyboardInterrupt:
-        print("\n\nProcess interrupted by user. Exiting...")
-        sys.exit(0)
+    async with AsyncPostgresSaver.from_conn_string(settings.database_url) as checkpointer:
+        
+        await checkpointer.setup()
+        
+        master_graph = build_master_graph(checkpointer)
+        
+        try:
+            await run_syndicate(ticker=args.ticker, query=args.query, master_graph=master_graph)
+        except KeyboardInterrupt:
+            print("\n\nProcess interrupted by user. Exiting...")
+            sys.exit(0)
+
+if __name__ == "__main__":
+    asyncio.run(
+        main(),
+        loop_factory=lambda: asyncio.SelectorEventLoop(selectors.SelectSelector())
+    )
