@@ -1,5 +1,5 @@
 from langgraph.graph import StateGraph, START, END
-from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.checkpoint.base import BaseCheckpointSaver
 
 from src.agent.state import MasterState
 from src.agent.nodes import (
@@ -13,7 +13,7 @@ from src.logger import get_logger
 
 logger = get_logger(__name__)
 
-def build_master_graph():
+def build_master_graph(checkpointer: BaseCheckpointSaver):
     logger.info("Building the Alpha Syndicate Master Graph...")
     builder = StateGraph(MasterState)
 
@@ -25,22 +25,15 @@ def build_master_graph():
     builder.add_node("publisher_node", publisher_node)
 
     builder.add_edge(START, "dispatcher_node")
-    
     builder.add_conditional_edges("dispatcher_node", route_to_gatherers)
-    
     builder.add_edge("gather_node", "critic_node")
-    
     builder.add_conditional_edges("critic_node", route_after_critic)
-    
     builder.add_edge("analyst_node", "human_review_node")
     builder.add_conditional_edges("human_review_node", route_after_human)
     builder.add_edge("publisher_node", END)
     
-    memory = InMemorySaver()
-
+    # Compile with the injected checkpointer
     return builder.compile(
-        checkpointer=memory,
+        checkpointer=checkpointer,
         interrupt_before=["human_review_node"]
     )
-
-master_graph = build_master_graph()
